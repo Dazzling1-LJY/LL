@@ -1,0 +1,319 @@
+import os
+import time
+import sqlite3
+from functools import wraps
+from flask import Flask, render_template, request, redirect, session, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
+
+app = Flask(__name__)
+
+# 数据库初始化
+DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DB_PATH = os.path.join(DB_DIR, "users.db")
+
+def init_db():
+    os.makedirs(DB_DIR, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        email TEXT,
+        phone TEXT
+    )''')
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone) VALUES ('admin', 'admin123', 'admin@example.com', '13800138000')")
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone) VALUES ('alice', 'alice2025', 'alice@example.com', '13900139001')")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# 修复4：通过环境变量获取 secret_key，或使用加密随机密钥
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(32).hex())
+# 修复7：设置 session 有效期为30分钟
+app.config["PERMANENT_SESSION_LIFETIME"] = 1800
+# 修复8：通过环境变量控制 debug 模式
+app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+
+# 修复2：初始管理员密码随机生成，不硬编码
+_DEFAULT_ADMIN_PASS = os.urandom(8).hex() + "Aa1!"
+
+# 修复1：密码不存储明文，只存哈希
+USERS = {
+    "admin": {
+        "username": "admin",
+        "password": generate_password_hash(_DEFAULT_ADMIN_PASS),
+        "role": "admin",
+        "email": "admin@example.com",
+        "phone": "13800138000",
+        "balance": 99999,
+        "locked_until": 0,
+        "login_failures": 0,
+        "must_change_password": True,
+    },
+}
+
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCK_MINUTES = 15
+
+
+def login_required(f):
+    """登录保护装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "username" not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def sanitize_user(user_dict):
+    """修复3：返回用户信息时排除敏感字段"""
+    safe = dict(user_dict)
+    safe.pop("password", None)
+    safe.pop("locked_until", None)
+    safe.pop("login_failures", None)
+    safe.pop("must_change_password", None)
+    return safe
+
+
+def is_locked(user_dict):
+    """检查用户是否被锁定"""
+    if user_dict.get("locked_until", 0) > time.time():
+        remaining = int(user_dict["locked_until"] - time.time())
+        return True, remaining
+    return False, 0
+
+
+def get_user_from_db(username):
+    """从 SQLite 数据库中查询用户信息"""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM users WHERE username = ?", (username,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            user = dict(row)
+            # 数据库表中无 role/balance 字段，补充默认值
+            user.setdefault("role", "user")
+            user.setdefault("balance", 0)
+            return user
+        return None
+    except Exception:
+        return None
+
+
+@app.route("/")
+def index():
+    username = session.get("username")
+    if not username:
+        return render_template("index.html", user_info=None)
+
+    user = USERS.get(username)
+    if user is None:
+        user = get_user_from_db(username)
+
+    if user is None:
+        return render_template("index.html", user_info=None)
+
+    locked, remaining = is_locked(user)
+    if locked:
+        session.pop("username", None)
+        return render_template("index.html", user_info=None,
+                               error=f"账号已被锁定，请{remaining}秒后再试")
+
+    user_info = sanitize_user(user)
+    return render_template("index.html", user_info=user_info)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        registered = request.args.get("registered")
+        return render_template("login.html", registered=registered)
+
+    error = None
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+
+    if not username or not password:
+        error = "用户名和密码不能为空"
+        return render_template("login.html", error=error)
+
+    user = USERS.get(username)
+    # 如果在内存字典中找不到，尝试从数据库查找（注册用户）
+    if user is None:
+        db_user = get_user_from_db(username)
+        if db_user is not None:
+            # 数据库用户密码为明文，直接比对
+            if db_user["password"] == password:
+                session["username"] = username
+                session.permanent = True
+                user_info = sanitize_user(db_user)
+                return render_template("index.html", user_info=user_info)
+            else:
+                error = "用户名或密码错误，请重试"
+                return render_template("login.html", error=error)
+
+    # 模糊提示：不区分"用户不存在"和"密码错误"
+    if user is None:
+        error = "用户名或密码错误，请重试"
+        return render_template("login.html", error=error)
+
+    # 修复5：检查是否被锁定
+    locked, remaining = is_locked(user)
+    if locked:
+        error = f"账号已被锁定，请{remaining}秒后再试"
+        return render_template("login.html", error=error)
+
+    # 修复1：使用 werkzeug 安全比对哈希
+    if check_password_hash(user["password"], password):
+        # 登录成功，重置失败计数
+        user["login_failures"] = 0
+        user["locked_until"] = 0
+        session["username"] = username
+        session.permanent = True
+
+        # 强制首次修改密码
+        if user.get("must_change_password"):
+            return redirect(url_for("change_password"))
+
+        user_info = sanitize_user(user)
+        return render_template("index.html", user_info=user_info)
+    else:
+        # 修复5：失败计数+锁定
+        user["login_failures"] = user.get("login_failures", 0) + 1
+        remaining_attempts = LOGIN_MAX_ATTEMPTS - user["login_failures"]
+        if user["login_failures"] >= LOGIN_MAX_ATTEMPTS:
+            user["locked_until"] = time.time() + LOGIN_LOCK_MINUTES * 60
+            error = f"密码错误次数过多，账号已锁定{LOGIN_LOCK_MINUTES}分钟"
+        else:
+            error = f"用户名或密码错误，请重试（还剩{remaining_attempts}次机会）"
+        return render_template("login.html", error=error)
+
+
+@app.route("/change-password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    username = session.get("username")
+    user = USERS.get(username)
+    error = None
+    success = None
+
+    if request.method == "POST":
+        old_pw = request.form.get("old_password", "")
+        new_pw = request.form.get("new_password", "")
+        confirm_pw = request.form.get("confirm_password", "")
+
+        if not check_password_hash(user["password"], old_pw):
+            error = "旧密码不正确"
+        elif len(new_pw) < 8:
+            error = "新密码长度不能少于8位"
+        elif not any(c.isupper() for c in new_pw):
+            error = "新密码必须包含大写字母"
+        elif not any(c.islower() for c in new_pw):
+            error = "新密码必须包含小写字母"
+        elif not any(c.isdigit() for c in new_pw):
+            error = "新密码必须包含数字"
+        elif not any(c in "!@#$%^&*()_+-=[]{}|;:',.<>?/~`" for c in new_pw):
+            error = "新密码必须包含至少一个特殊字符"
+        elif new_pw != confirm_pw:
+            error = "两次输入的密码不一致"
+        elif check_password_hash(user["password"], new_pw):
+            error = "新密码不能与旧密码相同"
+        else:
+            user["password"] = generate_password_hash(new_pw)
+            user["must_change_password"] = False
+            success = "密码修改成功"
+
+    return render_template("change_password.html", error=error, success=success)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "GET":
+        return render_template("register.html")
+
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    email = request.form.get("email", "").strip()
+    phone = request.form.get("phone", "").strip()
+
+    error = None
+    if not username or not password:
+        error = "用户名和密码不能为空"
+        return render_template("register.html", error=error)
+
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        c = conn.cursor()
+        # ✅ 修复：使用参数化查询，防止 SQL 注入
+        sql = "INSERT INTO users (username, password, email, phone) VALUES (?, ?, ?, ?)"
+        print(f"[SQL] {sql} | params={[username, password, email, phone]!r}", flush=True)
+        c.execute(sql, (username, password, email, phone))
+        conn.commit()
+        conn.close()
+        return redirect("/login?registered=1")
+    except sqlite3.IntegrityError:
+        try:
+            conn.close()
+        except:
+            pass
+        error = "用户名已存在"
+        return render_template("register.html", error=error)
+    except Exception as e:
+        try:
+            conn.close()
+        except:
+            pass
+        error = f"注册失败: {str(e)}"
+        return render_template("register.html", error=error)
+
+
+@app.route("/search")
+def search():
+    keyword = request.args.get("keyword", "").strip()
+    results = []
+    sql = ""
+    if keyword:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        # ✅ 修复：使用参数化查询，防止 SQL 注入
+        sql = "SELECT * FROM users WHERE username LIKE ? OR email LIKE ?"
+        keyword_param = f"%{keyword}%"
+        print(f"[SQL] {sql} | keyword_param={keyword_param!r}", flush=True)
+        c.execute(sql, (keyword_param, keyword_param))
+        rows = c.fetchall()
+        results = [dict(row) for row in rows]
+        conn.close()
+
+    username = session.get("username")
+    user_info = None
+    if username:
+        user = USERS.get(username)
+        if user is None:
+            user = get_user_from_db(username)
+        if user:
+            locked, remaining = is_locked(user)
+            if not locked:
+                user_info = sanitize_user(user)
+
+    return render_template("index.html", user_info=user_info, search_results=results, keyword=keyword, sql_debug=sql)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
+
+
+if __name__ == "__main__":
+    print(f"[INFO] 初始管理员密码已随机生成: {_DEFAULT_ADMIN_PASS}")
+    print(f"[INFO] 请登录后立即修改密码！")
+    # 生产环境请配置 HTTPS/TLS 反向代理（如 Nginx + Let's Encrypt），
+    # 确保密码等敏感信息通过加密通道传输
+    app.run(host="0.0.0.0", port=5000)

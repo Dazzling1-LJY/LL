@@ -1,0 +1,249 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #f5f7fa;
+    min-height: 100vh;
+}
+
+.navbar {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #ffffff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px;
+    height: 56px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.nav-left {
+    display: flex;
+    align-items: center;
+}
+
+.brand {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+.nav-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.nav-welcome {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+.nav-link {
+    color: #ffffff;
+    text-decoration: none;
+    font-size: 14px;
+    padding: 6px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.container {
+    max-width: 640px;
+    margin: 48px auto;
+    padding: 0 16px;
+}
+
+.card {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    padding: 32px;
+    margin-bottom: 24px;
+}
+
+.card h2 {
+    font-size: 22px;
+    color: #333333;
+    margin-bottom: 16px;
+}
+
+.card h3 {
+    font-size: 16px;
+    color: #555555;
+    margin-bottom: 12px;
+}
+
+.card p {
+    color: #666666;
+    margin-bottom: 16px;
+    line-height: 1.6;
+}
+
+.login-card {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 14px;
+    color: #555555;
+    margin-bottom: 6px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #dddddd;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #333333;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.form-input:focus {
+    border-color: #667eea;
+}
+
+.btn {
+    display: inline-block;
+    background-color: #667eea;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 24px;
+    font-size: 14px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+
+.btn:hover {
+    background-color: #5a6fd6;
+}
+
+.btn-logout {
+    background-color: #e74c3c;
+    margin-top: 12px;
+}
+
+.btn-logout:hover {
+    background-color: #c0392b;
+}
+
+.error-message {
+    background-color: #fdecea;
+    color: #e74c3c;
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    border: 1px solid #f5c6cb;
+}
+
+.user-info-list {
+    list-style: none;
+    padding: 0;
+}
+
+.user-info-list li {
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 14px;
+    color: #444444;
+}
+
+.user-info-list li:last-child {
+    border-bottom: none;
+}
+
+.label {
+    font-weight: 600;
+    color: #333333;
+}
+
+.success-message {
+    background-color: #d4edda;
+    color: #155724;
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    border: 1px solid #c3e6cb;
+}
+
+/* 搜索功能样式 */
+.search-section {
+    margin-bottom: 20px;
+}
+
+.search-form {
+    display: flex;
+    gap: 8px;
+}
+
+.search-input {
+    flex: 1;
+}
+
+.btn-search {
+    white-space: nowrap;
+}
+
+.search-results {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.search-results h3 {
+    margin-bottom: 12px;
+}
+
+.no-results {
+    color: #999999;
+    font-size: 14px;
+    text-align: center;
+    padding: 16px 0;
+}
+
+/* 数据表格样式 */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.data-table th {
+    background-color: #f8f9fa;
+    color: #555555;
+    font-weight: 600;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.data-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #444444;
+}
+
+.data-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
