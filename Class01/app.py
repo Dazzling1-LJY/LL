@@ -1,9 +1,11 @@
 import os
 import time
+import uuid
 import sqlite3
 from functools import wraps
 from flask import Flask, render_template, request, redirect, session, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
@@ -37,10 +39,23 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 1800
 app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
 # 上传配置
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "uploads")
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# 文件上传白名单
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp"}
+ALLOWED_MIMETYPES = {"image/jpeg", "image/png", "image/gif", "image/bmp", "image/webp"}
+# 图片文件 Magic Number（文件头字节特征）
+MAGIC_NUMBERS = [
+    (b"\xff\xd8\xff", "jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "png"),
+    (b"GIF87a", "gif"),
+    (b"GIF89a", "gif"),
+    (b"BM", "bmp"),
+    (b"RIFF", "webp"),
+]
 
 # 修复2：初始管理员密码随机生成，不硬编码
 _DEFAULT_ADMIN_PASS = os.urandom(8).hex() + "Aa1!"
@@ -110,6 +125,21 @@ def get_user_from_db(username):
         return None
     except Exception:
         return None
+
+
+# ==================== 文件上传校验 ====================
+
+def allowed_file(filename):
+    """WEB-UP-002 修复：白名单后缀校验"""
+    return "." in filename and \
+           filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def valid_magic_number(file_obj):
+    """WEB-UP-004 修复：Magic Number 文件头校验"""
+    header = file_obj.read(16)
+    file_obj.seek(0)
+    return any(header.startswith(magic) for magic, _ in MAGIC_NUMBERS)
 
 
 @app.route("/")
@@ -321,19 +351,63 @@ def upload():
     error = None
     success = None
     file_url = None
+    filename = None
 
+    # 修复 WEB-UP-009：文件为空检查
     if file is None or file.filename == "":
-        error = "请选择要上传的文件"
-        return render_template("upload.html", error=error)
+        return render_template("upload.html", error="请选择要上传的文件")
 
-    # 使用用户提供的原始文件名保存，不做任何校验
-    filename = file.filename
-    save_path = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(save_path)
-    file_url = url_for("static", filename=f"uploads/{filename}")
-    success = "头像上传成功！"
+    # 修复 WEB-UP-002：白名单后缀校验
+    if not allowed_file(file.filename):
+        return render_template("upload.html",
+                               error="仅支持 jpg/jpeg/png/gif/bmp/webp 格式的图片文件")
 
-    return render_template("upload.html", success=success, file_url=file_url, filename=filename)
+    # 修复 WEB-UP-003：MIME 类型辅助校验
+    if file.mimetype not in ALLOWED_MIMETYPES:
+        return render_template("upload.html",
+                               error="不支持的文件类型")
+
+    # 修复 WEB-UP-004：Magic Number 文件头校验
+    if not valid_magic_number(file):
+        return render_template("upload.html",
+                               error="文件内容不是有效的图片格式")
+
+    try:
+        # 修复 WEB-UP-006：secure_filename 防路径穿越 + 防特殊字符
+        safe_name = secure_filename(file.filename)
+        if not safe_name:
+            return render_template("upload.html", error="无效的文件名")
+
+        # 修复 WEB-UP-005：UUID 重命名防止文件覆盖
+        ext = safe_name.rsplit(".", 1)[1].lower()
+        unique_name = f"{uuid.uuid4().hex}.{ext}"
+
+        # 修复 WEB-UP-007：上传至隔离目录（非 static/ 子目录）
+        save_path = os.path.join(app.config["UPLOAD_FOLDER"], unique_name)
+        file.save(save_path)
+
+        # 通过单独的路由提供访问
+        file_url = url_for("uploaded_file", filename=unique_name)
+        success = "头像上传成功！"
+    except OSError:
+        return render_template("upload.html", error="文件保存失败，请稍后重试")
+    except Exception:
+        return render_template("upload.html", error="上传处理失败，请联系管理员")
+
+    return render_template("upload.html", success=success, file_url=file_url, filename=unique_name)
+
+
+@app.route("/uploads/<filename>")
+@login_required
+def uploaded_file(filename):
+    """修复 WEB-UP-007：通过隔离路由提供上传文件的访问，可安全预览"""
+    from flask import send_from_directory
+    # 启用 X-Sendfile（生产环境性能优化）
+    response = send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+    # 安全响应头：防止 MIME 类型嗅探和 XSS
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Disposition"] = f"inline; filename=\"{filename}\""
+    return response
 
 
 @app.route("/logout")
