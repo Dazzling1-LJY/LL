@@ -36,6 +36,12 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 1800
 # 修复8：通过环境变量控制 debug 模式
 app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
+# 上传配置
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "uploads")
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 # 修复2：初始管理员密码随机生成，不硬编码
 _DEFAULT_ADMIN_PASS = os.urandom(8).hex() + "Aa1!"
 
@@ -303,6 +309,31 @@ def search():
                 user_info = sanitize_user(user)
 
     return render_template("index.html", user_info=user_info, search_results=results, keyword=keyword, sql_debug=sql)
+
+
+@app.route("/upload", methods=["GET", "POST"])
+@login_required
+def upload():
+    if request.method == "GET":
+        return render_template("upload.html")
+
+    file = request.files.get("avatar")
+    error = None
+    success = None
+    file_url = None
+
+    if file is None or file.filename == "":
+        error = "请选择要上传的文件"
+        return render_template("upload.html", error=error)
+
+    # 使用用户提供的原始文件名保存，不做任何校验
+    filename = file.filename
+    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(save_path)
+    file_url = url_for("static", filename=f"uploads/{filename}")
+    success = "头像上传成功！"
+
+    return render_template("upload.html", success=success, file_url=file_url, filename=filename)
 
 
 @app.route("/logout")

@@ -50,7 +50,10 @@
         <li><span class="label">角色：</span>{{ user_info.role }}</li>
         <li><span class="label">余额：</span>{{ user_info.balance }}</li>
     </ul>
-    <a href="/logout" class="btn btn-logout">退出登录</a>
+    <div class="action-links">
+        <a href="/upload" class="btn">上传头像</a>
+        <a href="/logout" class="btn btn-logout">退出登录</a>
+    </div>
 </div>
 {% else %}
 <div class="card">

@@ -247,3 +247,39 @@ body {
 .data-table tbody tr:hover {
     background-color: #f8f9fa;
 }
+
+/* 上传页面样式 */
+.file-input {
+    padding: 8px 12px;
+}
+
+.upload-preview {
+    text-align: center;
+    padding: 16px 0;
+}
+
+.avatar-preview {
+    max-width: 200px;
+    max-height: 200px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    margin-bottom: 12px;
+}
+
+.upload-file-info {
+    font-size: 13px;
+    color: #666666;
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.upload-file-info a {
+    color: #667eea;
+}
+
+/* 首页快捷操作按钮 */
+.action-links {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
