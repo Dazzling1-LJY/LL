@@ -480,6 +480,7 @@ def profile():
     """修复 IDOR-001：添加登录保护和权限校验"""
     current_user_id = session.get("user_id")
     target_user_id = request.args.get("user_id")
+    url_error = request.args.get("error")  # 读取从 recharge 重定向带来的错误信息
 
     if not target_user_id:
         return render_template("profile.html", user=None, error="请提供用户ID", user_id=None)
@@ -497,7 +498,7 @@ def profile():
     if user is None:
         return render_template("profile.html", user=None, error="未找到该用户", user_id=None)
 
-    return render_template("profile.html", user=user, error=None, user_id=target_user_id)
+    return render_template("profile.html", user=user, error=url_error, user_id=target_user_id)
 
 
 @app.route("/recharge", methods=["POST"])

@@ -5,8 +5,9 @@
 
     {% if error %}
     <div class="error-message">{{ error }}</div>
-    <a href="/" class="btn" style="margin-top: 12px;">返回首页</a>
-    {% elif user %}
+    {% endif %}
+
+    {% if user %}
     <div class="profile-info">
         <ul class="user-info-list">
             <li><span class="label">ID：</span>{{ user.id }}</li>
@@ -30,6 +31,8 @@
         </form>
     </div>
 
+    <a href="/" class="btn" style="margin-top: 12px;">返回首页</a>
+    {% elif error %}
     <a href="/" class="btn" style="margin-top: 12px;">返回首页</a>
     {% else %}
     <p>请通过导航栏个人中心链接或首页入口访问。</p>
