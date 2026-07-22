@@ -3,6 +3,8 @@ import time
 import uuid
 import sqlite3
 from functools import wraps
+from decimal import Decimal
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, session, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -22,10 +24,16 @@ def init_db():
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         email TEXT,
-        phone TEXT
+        phone TEXT,
+        balance REAL DEFAULT 0
     )''')
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone) VALUES ('admin', 'admin123', 'admin@example.com', '13800138000')")
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone) VALUES ('alice', 'alice2025', 'alice@example.com', '13900139001')")
+    # 为旧表添加 balance 列（如果不存在）
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES ('admin', 'admin123', 'admin@example.com', '13800138000', 0)")
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES ('alice', 'alice2025', 'alice@example.com', '13900139001', 0)")
     conn.commit()
     conn.close()
 
@@ -119,9 +127,7 @@ def get_user_from_db(username):
         conn.close()
         if row:
             user = dict(row)
-            # 数据库表中无 role/balance 字段，补充默认值
             user.setdefault("role", "user")
-            user.setdefault("balance", 0)
             return user
         return None
     except Exception:
@@ -135,7 +141,6 @@ def get_user_by_id(user_id):
         user_data["id"] = user_data.get("id", 1 if username == "admin" else 0)
         if str(user_data["id"]) == str(user_id):
             return sanitize_user(user_data)
-        # admin 固定 id=1
 
     # 再去数据库查找
     try:
@@ -148,16 +153,38 @@ def get_user_by_id(user_id):
         if row:
             user = dict(row)
             user.setdefault("role", "user")
-            # 从全局余额表获取余额，默认为0
-            user["balance"] = BALANCES.get(int(user_id), 0)
             return user
         return None
     except Exception:
         return None
 
 
-# 全局余额存储表（user_id -> balance）
-BALANCES = {}
+def update_balance_in_db(user_id, new_balance):
+    """更新数据库中用户的余额"""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        c = conn.cursor()
+        c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def get_current_user_balance(user_id):
+    """获取数据库中用户的当前余额"""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        c = conn.cursor()
+        c.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            return row[0] or 0
+        return 0
+    except Exception:
+        return 0
 
 
 # ==================== 文件上传校验 ====================
@@ -222,6 +249,7 @@ def login():
             # 数据库用户密码为明文，直接比对
             if db_user["password"] == password:
                 session["username"] = username
+                session["user_id"] = db_user.get("id")
                 session.permanent = True
                 user_info = sanitize_user(db_user)
                 return render_template("index.html", user_info=user_info, current_user_id=db_user.get("id"))
@@ -246,6 +274,7 @@ def login():
         user["login_failures"] = 0
         user["locked_until"] = 0
         session["username"] = username
+        session["user_id"] = user.get("id")
         session.permanent = True
 
         # 强制首次修改密码
@@ -446,57 +475,85 @@ def uploaded_file(filename):
 
 
 @app.route("/profile")
+@login_required
 def profile():
-    user_id = request.args.get("user_id")
-    error = None
-    user = None
+    """修复 IDOR-001：添加登录保护和权限校验"""
+    current_user_id = session.get("user_id")
+    target_user_id = request.args.get("user_id")
 
-    if not user_id:
-        error = "请提供用户ID"
-    else:
-        try:
-            user_id = int(user_id)
-        except ValueError:
-            error = "无效的用户ID"
-            user_id = None
+    if not target_user_id:
+        return render_template("profile.html", user=None, error="请提供用户ID", user_id=None)
 
-    if user_id is not None:
-        user = get_user_by_id(user_id)
-        if user is None:
-            error = "未找到该用户"
+    try:
+        target_user_id = int(target_user_id)
+    except ValueError:
+        return render_template("profile.html", user=None, error="无效的用户ID", user_id=None)
 
-    return render_template("profile.html", user=user, error=error, user_id=user_id)
+    # 权限校验：只能查看自己的个人中心
+    if str(target_user_id) != str(current_user_id):
+        return render_template("profile.html", user=None, error="无权查看其他用户的资料", user_id=None)
+
+    user = get_user_by_id(target_user_id)
+    if user is None:
+        return render_template("profile.html", user=None, error="未找到该用户", user_id=None)
+
+    return render_template("profile.html", user=user, error=None, user_id=target_user_id)
 
 
 @app.route("/recharge", methods=["POST"])
+@login_required
 def recharge():
+    """修复 BL-004：添加 @login_required 认证"""
+    current_user_id = session.get("user_id")
     user_id = request.form.get("user_id")
-    amount = request.form.get("amount")
+    amount_str = request.form.get("amount")
 
-    if not user_id or not amount:
+    if not user_id or not amount_str:
         return redirect("/profile?error=参数不完整")
 
     try:
         user_id = int(user_id)
-        amount = float(amount)
-    except ValueError:
+        amount = Decimal(str(amount_str))
+    except (ValueError, Exception):
         return redirect("/profile?error=参数格式错误")
 
-    # 直接修改余额：balance = balance + amount（不做正负校验）
-    user = get_user_by_id(user_id)
-    if user is None:
-        return redirect("/profile?error=未找到该用户")
+    # 修复 IDOR-002：只能给自己充值
+    if user_id != current_user_id:
+        return redirect("/profile?error=无权操作其他用户账户")
 
-    # 如果是 admin 内存用户，直接修改字典中的 balance
-    for username, user_data in USERS.items():
-        if user_data.get("id") == user_id:
-            user_data["balance"] = user_data.get("balance", 0) + amount
-            BALANCES[user_id] = user_data["balance"]
-            return redirect(f"/profile?user_id={user_id}")
+    # 修复 BL-001：金额必须大于0
+    if amount <= 0:
+        return redirect(f"/profile?user_id={user_id}&error=金额必须大于0")
 
-    # 数据库用户，存入全局余额表
-    current_balance = BALANCES.get(user_id, 0)
-    BALANCES[user_id] = current_balance + amount
+    # 修复 BL-003：频率限制 - 每分钟最多充5次
+    now = time.time()
+    last_time = session.get("last_recharge_time", 0)
+    recharge_count = session.get("recharge_count", 0)
+
+    if now - last_time > 60:
+        # 新的一分钟，重置计数
+        session["recharge_count"] = 1
+        session["last_recharge_time"] = now
+    elif recharge_count >= 5:
+        return redirect(f"/profile?user_id={user_id}&error=充值过于频繁，请稍后再试")
+    else:
+        session["recharge_count"] = recharge_count + 1
+
+    # 修复 BL-002：使用 Decimal 替代 float 避免精度问题
+    if user_id == 1:  # admin 内存用户
+        for username, user_data in USERS.items():
+            if user_data.get("id") == user_id:
+                current_balance = Decimal(str(user_data.get("balance", 0)))
+                new_balance = current_balance + amount
+                user_data["balance"] = float(new_balance)
+                # 同步存入数据库
+                update_balance_in_db(user_id, float(new_balance))
+                return redirect(f"/profile?user_id={user_id}")
+    else:
+        # 数据库用户
+        current_balance = Decimal(str(get_current_user_balance(user_id)))
+        new_balance = current_balance + amount
+        update_balance_in_db(user_id, float(new_balance))
 
     return redirect(f"/profile?user_id={user_id}")
 
