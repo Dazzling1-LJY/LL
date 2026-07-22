@@ -283,3 +283,28 @@ body {
     gap: 8px;
     margin-top: 12px;
 }
+
+/* 个人中心样式 */
+.profile-info {
+    margin-bottom: 8px;
+}
+
+.balance {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e67e22;
+}
+
+.recharge-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.recharge-section h3 {
+    margin-bottom: 16px;
+}
+
+.recharge-form {
+    max-width: 320px;
+}

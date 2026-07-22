@@ -63,6 +63,7 @@ _DEFAULT_ADMIN_PASS = os.urandom(8).hex() + "Aa1!"
 # 修复1：密码不存储明文，只存哈希
 USERS = {
     "admin": {
+        "id": 1,
         "username": "admin",
         "password": generate_password_hash(_DEFAULT_ADMIN_PASS),
         "role": "admin",
@@ -127,6 +128,38 @@ def get_user_from_db(username):
         return None
 
 
+def get_user_by_id(user_id):
+    """根据 user_id 查询用户信息（无论内存还是数据库）"""
+    # 先在内存 USERS 字典中查找
+    for username, user_data in USERS.items():
+        user_data["id"] = user_data.get("id", 1 if username == "admin" else 0)
+        if str(user_data["id"]) == str(user_id):
+            return sanitize_user(user_data)
+        # admin 固定 id=1
+
+    # 再去数据库查找
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            user = dict(row)
+            user.setdefault("role", "user")
+            # 从全局余额表获取余额，默认为0
+            user["balance"] = BALANCES.get(int(user_id), 0)
+            return user
+        return None
+    except Exception:
+        return None
+
+
+# 全局余额存储表（user_id -> balance）
+BALANCES = {}
+
+
 # ==================== 文件上传校验 ====================
 
 def allowed_file(filename):
@@ -162,7 +195,9 @@ def index():
                                error=f"账号已被锁定，请{remaining}秒后再试")
 
     user_info = sanitize_user(user)
-    return render_template("index.html", user_info=user_info)
+    # 获取当前用户的 ID（供个人中心链接使用）
+    current_user_id = user.get("id", 1)
+    return render_template("index.html", user_info=user_info, current_user_id=current_user_id)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -189,7 +224,7 @@ def login():
                 session["username"] = username
                 session.permanent = True
                 user_info = sanitize_user(db_user)
-                return render_template("index.html", user_info=user_info)
+                return render_template("index.html", user_info=user_info, current_user_id=db_user.get("id"))
             else:
                 error = "用户名或密码错误，请重试"
                 return render_template("login.html", error=error)
@@ -218,7 +253,7 @@ def login():
             return redirect(url_for("change_password"))
 
         user_info = sanitize_user(user)
-        return render_template("index.html", user_info=user_info)
+        return render_template("index.html", user_info=user_info, current_user_id=user.get("id"))
     else:
         # 修复5：失败计数+锁定
         user["login_failures"] = user.get("login_failures", 0) + 1
@@ -408,6 +443,62 @@ def uploaded_file(filename):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Content-Disposition"] = f"inline; filename=\"{filename}\""
     return response
+
+
+@app.route("/profile")
+def profile():
+    user_id = request.args.get("user_id")
+    error = None
+    user = None
+
+    if not user_id:
+        error = "请提供用户ID"
+    else:
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            error = "无效的用户ID"
+            user_id = None
+
+    if user_id is not None:
+        user = get_user_by_id(user_id)
+        if user is None:
+            error = "未找到该用户"
+
+    return render_template("profile.html", user=user, error=error, user_id=user_id)
+
+
+@app.route("/recharge", methods=["POST"])
+def recharge():
+    user_id = request.form.get("user_id")
+    amount = request.form.get("amount")
+
+    if not user_id or not amount:
+        return redirect("/profile?error=参数不完整")
+
+    try:
+        user_id = int(user_id)
+        amount = float(amount)
+    except ValueError:
+        return redirect("/profile?error=参数格式错误")
+
+    # 直接修改余额：balance = balance + amount（不做正负校验）
+    user = get_user_by_id(user_id)
+    if user is None:
+        return redirect("/profile?error=未找到该用户")
+
+    # 如果是 admin 内存用户，直接修改字典中的 balance
+    for username, user_data in USERS.items():
+        if user_data.get("id") == user_id:
+            user_data["balance"] = user_data.get("balance", 0) + amount
+            BALANCES[user_id] = user_data["balance"]
+            return redirect(f"/profile?user_id={user_id}")
+
+    # 数据库用户，存入全局余额表
+    current_balance = BALANCES.get(user_id, 0)
+    BALANCES[user_id] = current_balance + amount
+
+    return redirect(f"/profile?user_id={user_id}")
 
 
 @app.route("/logout")
