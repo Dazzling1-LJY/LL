@@ -65,22 +65,22 @@ MAGIC_NUMBERS = [
     (b"RIFF", "webp"),
 ]
 
-# 修复2：初始管理员密码随机生成，不硬编码
-_DEFAULT_ADMIN_PASS = os.urandom(8).hex() + "Aa1!"
+# 管理员密码重置为 admin123
+_DEFAULT_ADMIN_PASS = "admin123"
 
 # 修复1：密码不存储明文，只存哈希
 USERS = {
     "admin": {
         "id": 1,
         "username": "admin",
-        "password": generate_password_hash(_DEFAULT_ADMIN_PASS),
+        "password": generate_password_hash("admin123"),
         "role": "admin",
         "email": "admin@example.com",
         "phone": "13800138000",
         "balance": 99999,
         "locked_until": 0,
         "login_failures": 0,
-        "must_change_password": True,
+        "must_change_password": False,
     },
 }
 
@@ -603,8 +603,8 @@ def logout():
 
 
 if __name__ == "__main__":
-    print(f"[INFO] 初始管理员密码已随机生成: {_DEFAULT_ADMIN_PASS}")
-    print(f"[INFO] 请登录后立即修改密码！")
+    print(f"[INFO] 管理员密码已重置为: admin123")
+    print(f"[INFO] 账号: admin / 密码: admin123")
     # 生产环境请配置 HTTPS/TLS 反向代理（如 Nginx + Let's Encrypt），
     # 确保密码等敏感信息通过加密通道传输
     app.run(host="0.0.0.0", port=5000)
