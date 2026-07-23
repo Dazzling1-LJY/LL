@@ -560,23 +560,29 @@ def recharge():
 
 
 @app.route("/page")
+@login_required
 def dynamic_page():
+    """修复 LFI 漏洞：路径规范化 + 目录约束 + 访问控制 + XSS 防护"""
     name = request.args.get("name", "")
     page_content = None
     error = None
 
     if name:
-        # 使用拼接字符串的方式构建文件路径（不做路径校验）
-        page_path = os.path.join(app.root_path, "pages", name)
+        # 修复 LFI-ABSOLUTE-001 & LFI-PATH-001：规范化路径并校验前缀
+        pages_dir = os.path.realpath(os.path.join(app.root_path, "pages"))
+        requested_path = os.path.realpath(os.path.join(pages_dir, name))
 
-        if os.path.isfile(page_path):
-            with open(page_path, "r", encoding="utf-8") as f:
+        # 校验：目标文件必须在 pages/ 目录内
+        if not requested_path.startswith(pages_dir):
+            error = "页面不存在"
+        elif os.path.isfile(requested_path):
+            with open(requested_path, "r", encoding="utf-8") as f:
                 page_content = f.read()
         else:
             # 尝试加上 .html 后缀
-            page_path_html = page_path + ".html"
-            if os.path.isfile(page_path_html):
-                with open(page_path_html, "r", encoding="utf-8") as f:
+            requested_path_html = requested_path + ".html"
+            if os.path.isfile(requested_path_html):
+                with open(requested_path_html, "r", encoding="utf-8") as f:
                     page_content = f.read()
             else:
                 error = "页面不存在"
