@@ -308,3 +308,40 @@ body {
 .recharge-form {
     max-width: 320px;
 }
+
+/* 动态页面样式 */
+.page-card {
+    line-height: 1.8;
+}
+
+.help-content h2 {
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+}
+
+.help-section {
+    margin-bottom: 20px;
+}
+
+.help-section h3 {
+    color: #667eea;
+    margin-bottom: 8px;
+}
+
+.help-section ul {
+    padding-left: 20px;
+}
+
+.help-section ul li {
+    margin-bottom: 6px;
+    color: #444444;
+}
+
+.help-section p {
+    color: #555555;
+}
+
+.help-section p strong {
+    color: #333333;
+}
