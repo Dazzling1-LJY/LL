@@ -3,7 +3,7 @@
 
 {% if page_content %}
 <div class="card page-card">
-    {{ page_content }}
+    {{ page_content|safe }}
     <a href="/" class="btn" style="margin-top: 16px;">返回首页</a>
 </div>
 {% elif page_error %}
