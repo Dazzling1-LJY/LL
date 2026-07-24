@@ -335,10 +335,14 @@ def login():
         return render_template("login.html", error=error)
 
 
-@app.route("/change-password", methods=["POST"])
+@app.route("/change-password", methods=["GET", "POST"])
 @login_required
 def change_password():
     """修改密码（修复：CSRF防护 + 身份校验 + 原密码验证）"""
+    # GET 请求直接跳转到个人中心
+    if request.method == "GET":
+        user_id = session.get("user_id", 1)
+        return redirect(f"/profile?user_id={user_id}")
     # 修复 CSRF-001 & CSRF-002：CSRF Token 校验 + Referer 校验
     csrf_token = request.form.get("csrf_token", "")
     if not validate_csrf_token(csrf_token):
