@@ -483,6 +483,12 @@ def profile():
     url_error = request.args.get("error")  # 读取从 recharge 重定向带来的错误信息
 
     if not target_user_id:
+        # 如果没有 user_id 但有 error（从 change-password/recharge 重定向过来）
+        # 使用当前登录用户的 ID 显示页面
+        if url_error:
+            user = get_user_by_id(current_user_id)
+            if user:
+                return render_template("profile.html", user=user, error=url_error, user_id=current_user_id)
         return render_template("profile.html", user=None, error="请提供用户ID", user_id=None)
 
     try:
