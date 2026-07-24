@@ -309,6 +309,21 @@ body {
     max-width: 320px;
 }
 
+/* 修改密码样式 */
+.password-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.password-section h3 {
+    margin-bottom: 16px;
+}
+
+.password-form {
+    max-width: 320px;
+}
+
 /* 动态页面样式 */
 .page-card {
     line-height: 1.8;

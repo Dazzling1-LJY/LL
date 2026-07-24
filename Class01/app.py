@@ -277,9 +277,9 @@ def login():
         session["user_id"] = user.get("id")
         session.permanent = True
 
-        # 强制首次修改密码
+        # 强制首次修改密码（跳转到首页，通过个人中心修改）
         if user.get("must_change_password"):
-            return redirect(url_for("change_password"))
+            return redirect("/")
 
         user_info = sanitize_user(user)
         return render_template("index.html", user_info=user_info, current_user_id=user.get("id"))
@@ -295,41 +295,41 @@ def login():
         return render_template("login.html", error=error)
 
 
-@app.route("/change-password", methods=["GET", "POST"])
-@login_required
+@app.route("/change-password", methods=["POST"])
 def change_password():
-    username = session.get("username")
-    user = USERS.get(username)
-    error = None
-    success = None
+    """修改密码（无安全校验版本）"""
+    username = request.form.get("username", "").strip()
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
 
-    if request.method == "POST":
-        old_pw = request.form.get("old_password", "")
-        new_pw = request.form.get("new_password", "")
-        confirm_pw = request.form.get("confirm_password", "")
+    if not username or not new_password:
+        return redirect("/profile?error=用户名和密码不能为空")
 
-        if not check_password_hash(user["password"], old_pw):
-            error = "旧密码不正确"
-        elif len(new_pw) < 8:
-            error = "新密码长度不能少于8位"
-        elif not any(c.isupper() for c in new_pw):
-            error = "新密码必须包含大写字母"
-        elif not any(c.islower() for c in new_pw):
-            error = "新密码必须包含小写字母"
-        elif not any(c.isdigit() for c in new_pw):
-            error = "新密码必须包含数字"
-        elif not any(c in "!@#$%^&*()_+-=[]{}|;:',.<>?/~`" for c in new_pw):
-            error = "新密码必须包含至少一个特殊字符"
-        elif new_pw != confirm_pw:
-            error = "两次输入的密码不一致"
-        elif check_password_hash(user["password"], new_pw):
-            error = "新密码不能与旧密码相同"
-        else:
-            user["password"] = generate_password_hash(new_pw)
-            user["must_change_password"] = False
-            success = "密码修改成功"
+    if new_password != confirm_password:
+        return redirect("/profile?error=两次输入的密码不一致")
 
-    return render_template("change_password.html", error=error, success=success)
+    # 尝试修改内存用户（admin）
+    if username in USERS:
+        USERS[username]["password"] = generate_password_hash(new_password)
+        USERS[username]["must_change_password"] = False
+        return redirect("/profile?user_id=1&success=密码修改成功")
+
+    # 尝试修改数据库用户
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE username = ?", (username,))
+        row = c.fetchone()
+        if row:
+            c.execute("UPDATE users SET password = ? WHERE username = ?", (new_password, username))
+            conn.commit()
+            conn.close()
+            return redirect(f"/profile?user_id={row[0]}&success=密码修改成功")
+        conn.close()
+    except Exception:
+        pass
+
+    return redirect("/profile?error=未找到该用户")
 
 
 @app.route("/register", methods=["GET", "POST"])
