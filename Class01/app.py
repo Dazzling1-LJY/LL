@@ -1,11 +1,12 @@
 import os
 import time
 import uuid
+import secrets
 import sqlite3
 from functools import wraps
 from decimal import Decimal
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, session, url_for
+from flask import Flask, render_template, request, redirect, session, url_for, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -187,6 +188,45 @@ def get_current_user_balance(user_id):
         return 0
 
 
+# ==================== CSRF 防护 ====================
+
+def generate_csrf_token():
+    """生成并存储 CSRF Token 到 session"""
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(32)
+    return session["csrf_token"]
+
+
+def validate_csrf_token(token):
+    """校验 CSRF Token"""
+    stored_token = session.get("csrf_token")
+    if not stored_token or not token:
+        return False
+    return secrets.compare_digest(stored_token, token)
+
+
+@app.context_processor
+def inject_global_vars():
+    """向所有模板注入 csrf_token 变量"""
+    token = generate_csrf_token()
+    return dict(csrf_token=token)
+
+
+def check_referer():
+    """校验 Referer，防止 CSRF（仅当 Referer 存在且来自外部时才拦截）"""
+    referer = request.headers.get("Referer", "")
+    from urllib.parse import urlparse
+    # 无 Referer：依赖 CSRF Token 校验（允许 API 客户端）
+    if not referer:
+        return True
+    # 有 Referer：检查是否同源
+    parsed = urlparse(referer)
+    allowed_hosts = ("127.0.0.1", "localhost", "192.168.137.129")
+    if parsed.hostname and parsed.hostname not in allowed_hosts:
+        return False
+    return True
+
+
 # ==================== 文件上传校验 ====================
 
 def allowed_file(filename):
@@ -296,38 +336,60 @@ def login():
 
 
 @app.route("/change-password", methods=["POST"])
+@login_required
 def change_password():
-    """修改密码（无安全校验版本）"""
-    username = request.form.get("username", "").strip()
+    """修改密码（修复：CSRF防护 + 身份校验 + 原密码验证）"""
+    # 修复 CSRF-001 & CSRF-002：CSRF Token 校验 + Referer 校验
+    csrf_token = request.form.get("csrf_token", "")
+    if not validate_csrf_token(csrf_token):
+        return redirect("/profile?error=请求验证失败，请刷新页面重试")
+
+    if not check_referer():
+        return redirect("/profile?error=非法请求来源")
+
+    current_username = session.get("username")
+    old_password = request.form.get("old_password", "")
     new_password = request.form.get("new_password", "")
     confirm_password = request.form.get("confirm_password", "")
 
-    if not username or not new_password:
-        return redirect("/profile?error=用户名和密码不能为空")
+    # 修复 IDOR-PWD-002：已由 @login_required 保证登录状态
+
+    # 修复 IDOR-PWD-001：只能修改自己的密码
+    # username 不再从表单获取，直接使用 session 中的用户名
+    username = current_username
+
+    if not old_password or not new_password:
+        return redirect("/profile?error=请填写完整信息")
 
     if new_password != confirm_password:
         return redirect("/profile?error=两次输入的密码不一致")
 
-    # 尝试修改内存用户（admin）
-    if username in USERS:
-        USERS[username]["password"] = generate_password_hash(new_password)
-        USERS[username]["must_change_password"] = False
-        return redirect("/profile?user_id=1&success=密码修改成功")
+    # 修复 IDOR-PWD-003：验证原密码
+    user_data = USERS.get(username)
+    if user_data:
+        if not check_password_hash(user_data["password"], old_password):
+            return redirect("/profile?error=原密码不正确")
+        user_data["password"] = generate_password_hash(new_password)
+        user_data["must_change_password"] = False
+        return redirect(f"/profile?user_id={user_data.get('id', 1)}&success=密码修改成功")
 
-    # 尝试修改数据库用户
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
-        c = conn.cursor()
-        c.execute("SELECT id FROM users WHERE username = ?", (username,))
-        row = c.fetchone()
-        if row:
+    # 数据库用户
+    db_user = get_user_from_db(username)
+    if db_user:
+        db_id = db_user.get("id")
+        # 数据库用户密码是明文，直接比对
+        stored_pwd = db_user.get("password", "")
+        if old_password != stored_pwd:
+            return redirect("/profile?error=原密码不正确")
+        try:
+            conn = sqlite3.connect(DB_PATH, timeout=10)
+            c = conn.cursor()
             c.execute("UPDATE users SET password = ? WHERE username = ?", (new_password, username))
             conn.commit()
             conn.close()
-            return redirect(f"/profile?user_id={row[0]}&success=密码修改成功")
-        conn.close()
-    except Exception:
-        pass
+            return redirect(f"/profile?user_id={db_id}&success=密码修改成功")
+        except Exception:
+            return redirect("/profile?error=修改失败，请稍后重试")
 
     return redirect("/profile?error=未找到该用户")
 
