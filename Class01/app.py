@@ -686,8 +686,8 @@ def welcome():
             name = username
         else:
             name = "亲爱的用户"
-    # 将用户输入直接拼接到模板字符串中
-    html = f"""<!DOCTYPE html>
+    # 修复 SSTI：使用模板变量代替 f-string 拼接
+    html = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -709,13 +709,13 @@ def welcome():
     </nav>
     <main class="container">
         <div class="card" style="text-align: center;">
-            <h1>欢迎你，{name}！</h1>
+            <h1>欢迎你，{{ name }}！</h1>
             <a href="/" class="btn" style="margin-top: 20px;">返回首页</a>
         </div>
     </main>
 </body>
 </html>"""
-    return render_template_string(html)
+    return render_template_string(html, name=name)
 
 
 @app.route("/feedback", methods=["GET", "POST"])
@@ -761,10 +761,10 @@ def feedback():
 </html>"""
         return render_template_string(html)
 
-    # POST
+    # POST — 修复 SSTI：使用模板变量代替 f-string 拼接
     name = request.form.get("name", "")
     message = request.form.get("message", "")
-    result_html = f"""<!DOCTYPE html>
+    result_html = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -786,15 +786,15 @@ def feedback():
     </nav>
     <main class="container">
         <div class="card">
-            <h2>{name} 的反馈：</h2>
-            <p>{message}</p>
+            <h2>{{ name }} 的反馈：</h2>
+            <p>{{ message }}</p>
             <a href="/feedback" class="btn" style="margin-top: 16px;">继续反馈</a>
             <a href="/" class="btn" style="margin-top: 16px;">返回首页</a>
         </div>
     </main>
 </body>
 </html>"""
-    return render_template_string(result_html)
+    return render_template_string(result_html, name=name, message=message)
 
 
 @app.route("/logout")
