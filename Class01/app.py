@@ -680,7 +680,12 @@ def dynamic_page():
 def welcome():
     name = request.args.get("name", "")
     if not name:
-        name = "亲爱的用户"
+        # 已登录用户默认显示用户名
+        username = session.get("username")
+        if username:
+            name = username
+        else:
+            name = "亲爱的用户"
     # 将用户输入直接拼接到模板字符串中
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
