@@ -814,9 +814,9 @@ def ping():
             error = "请输入 IP 地址"
         else:
             try:
-                # 使用字符串拼接构建系统命令
-                cmd = f"ping -c 3 {ip}"
-                output = subprocess.check_output(cmd, shell=True, timeout=30, stderr=subprocess.STDOUT)
+                # 修复 CI-001~CI-004：使用参数列表，禁用 shell 解析
+                cmd = ["ping", "-c", "3", ip]
+                output = subprocess.check_output(cmd, timeout=30, stderr=subprocess.STDOUT)
                 result = output.decode("utf-8", errors="replace")
             except subprocess.CalledProcessError as e:
                 # ping 返回码非0（如 100% packet loss）也显示结果
