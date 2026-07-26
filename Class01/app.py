@@ -819,7 +819,9 @@ def ping():
                 output = subprocess.check_output(cmd, shell=True, timeout=30, stderr=subprocess.STDOUT)
                 result = output.decode("utf-8", errors="replace")
             except subprocess.CalledProcessError as e:
-                result = f"命令执行失败（返回码: {e.returncode}）\n{e.output.decode('utf-8', errors='replace')}"
+                # ping 返回码非0（如 100% packet loss）也显示结果
+                output_text = e.output.decode("utf-8", errors="replace")
+                result = f"Ping 完成（返回码: {e.returncode}）\n{output_text}"
             except subprocess.TimeoutExpired:
                 result = "命令执行超时（30秒）"
             except Exception as e:
