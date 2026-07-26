@@ -360,3 +360,48 @@ body {
 .help-section p strong {
     color: #333333;
 }
+
+/* Ping 测试样式 */
+.ping-input-group {
+    display: flex;
+    gap: 8px;
+}
+
+.ping-input {
+    flex: 1;
+}
+
+.btn-ping {
+    white-space: nowrap;
+    background-color: #27ae60;
+}
+
+.btn-ping:hover {
+    background-color: #219a52;
+}
+
+.ping-result {
+    margin-top: 16px;
+}
+
+.ping-result-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #555555;
+    margin-bottom: 8px;
+}
+
+.ping-console {
+    background-color: #1a1a2e;
+    color: #00ff41;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 13px;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.5;
+}

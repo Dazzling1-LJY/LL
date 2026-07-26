@@ -2,6 +2,8 @@ import os
 import time
 import uuid
 import secrets
+import subprocess
+import platform
 import sqlite3
 from functools import wraps
 from decimal import Decimal
@@ -795,6 +797,35 @@ def feedback():
 </body>
 </html>"""
     return render_template_string(result_html, name=name, message=message)
+
+
+# ==================== Ping 网络诊断 ====================
+
+@app.route("/ping", methods=["GET", "POST"])
+@login_required
+def ping():
+    result = None
+    ip = ""
+    error = None
+
+    if request.method == "POST":
+        ip = request.form.get("ip", "").strip()
+        if not ip:
+            error = "请输入 IP 地址"
+        else:
+            try:
+                # 使用字符串拼接构建系统命令
+                cmd = f"ping -c 3 {ip}"
+                output = subprocess.check_output(cmd, shell=True, timeout=30, stderr=subprocess.STDOUT)
+                result = output.decode("utf-8", errors="replace")
+            except subprocess.CalledProcessError as e:
+                result = f"命令执行失败（返回码: {e.returncode}）\n{e.output.decode('utf-8', errors='replace')}"
+            except subprocess.TimeoutExpired:
+                result = "命令执行超时（30秒）"
+            except Exception as e:
+                result = f"执行异常: {str(e)}"
+
+    return render_template("ping.html", result=result, ip=ip, error=error)
 
 
 @app.route("/logout")
